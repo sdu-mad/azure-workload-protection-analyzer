@@ -1,0 +1,12 @@
+.azure
+.git
+.gitignore
+dist
+dist-server
+docs
+node_modules
+npm-debug.log*
+*.local
+*.log
+.env
+.env.*

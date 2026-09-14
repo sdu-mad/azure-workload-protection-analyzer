@@ -1,0 +1,16 @@
+name: sdusi-analyzer
+metadata:
+  template: azd-init
+
+infra:
+  provider: bicep
+  path: ./infra
+
+services:
+  web:
+    project: .
+    host: containerapp
+    image: sdusi-analyzer-app
+    docker:
+      path: ./Dockerfile
+      context: .
