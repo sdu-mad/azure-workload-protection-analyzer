@@ -1,283 +1,260 @@
 # Cloud Workload Protection Readiness Analyzer
 
-`sdusi-analyzer-app` is a full-stack React and Node.js portfolio project that evaluates Azure Bicep against six cloud workload protection readiness checks. One production container serves the React portal and a TypeScript API.
+The Cloud Workload Protection Readiness Analyzer is a production-oriented React and Node.js application that compiles Azure Bicep with the official Bicep compiler and evaluates the resulting ARM template against evidence-backed workload protection rules.
 
-> This project is an educational static-readiness analyzer. It does not inspect deployed Azure resources, prove compliance, scan container images, or replace Microsoft Defender for Cloud, Azure Policy, threat modeling, or professional security review.
+The production architecture uses Microsoft Entra authentication, a VNet-integrated Azure Container Apps environment, private endpoints for Azure Container Registry and Key Vault, managed identity, Application Insights, Log Analytics, alerts, immutable image tags, and dev/prod deployment controls.
 
 ## Architecture
 
 ```text
-Browser
-   |
-   | HTTPS
-   v
-Azure Container App: sdusi-analyzer-app
-   |-- React/Vite portal
-   |-- Node.js/Express API
-   |-- Shared Bicep analyzer
-   |
-   +--> Azure Container Registry: sdusianalyzeracr
-   +--> Azure Key Vault: sdusi-analyzer-kv
-   +--> Log Analytics: sdusi-analyzer-law
+Authenticated browser
+        |
+        | HTTPS + Microsoft Entra ID
+        v
+Azure Container App
+        |-- React/Vite portal
+        |-- Node.js/Express API
+        |-- Official Bicep CLI
+        |-- Compiled ARM semantic analyzer
+        |
+        +--> ACR private endpoint
+        +--> Key Vault private endpoint
+        +--> Application Insights + Log Analytics
 ```
 
-The API and frontend use the same origin. Bicep source is processed in memory and is not persisted or logged.
+Submitted projects are compiled in isolated temporary directories. External Bicep registry and template-spec modules are rejected, the compiler runs with `--no-restore`, and temporary files are removed after every request.
 
-## Features
+## Production controls
 
-- Bicep editor with secure and insecure sample workloads
-- Server-side evaluation through `POST /api/analyze`
-- Six deterministic security-readiness rules
-- Weighted score, status, category dashboard, and findings
-- Health and Key Vault-aware readiness endpoints
-- Rule metadata endpoint
-- Request validation, body-size limits, rate limiting, and security headers
-- Automated analyzer and API tests
-- Multi-stage production container
-- AZD and modular Bicep infrastructure
-- User-assigned managed identity with scoped ACR and Key Vault roles
+- Microsoft Entra built-in authentication for Azure-hosted access
+- User-assigned managed identity for ACR and Key Vault
+- ACR administrator credentials disabled
+- ACR Premium and Key Vault private endpoints with private DNS
+- Real liveness and readiness probes
+- Application Insights OpenTelemetry instrumentation
+- Log Analytics retention by environment
+- Azure Monitor alerts and availability checks
+- Bounded request, project, compiler-output, and execution limits
+- Pinned official Bicep CLI with SHA-256 verification in the container image
+- GitHub OIDC deployment authentication with no client secret
+- Dependency review, container scanning, and SBOM generation
 
-## API
+## Semantic analysis
 
-| Method | Endpoint | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/analyze` | Analyze `{ "source": "<bicep>" }` |
-| `GET` | `/api/rules` | Return rule metadata |
-| `GET` | `/api/health` | Liveness check |
-| `GET` | `/api/ready` | Readiness and Key Vault connectivity |
+The API accepts either one Bicep file or a local multi-file project.
 
-Requests to `/api/analyze` are limited to 200,000 source characters and 30 requests per minute per client. The API never returns Key Vault secret values.
+### Single file
 
-## Scoring
+```json
+{
+  "source": "targetScope = 'resourceGroup'\n..."
+}
+```
 
-| Rule | Check | Weight |
-| --- | --- | ---: |
-| CWP001 | System-assigned managed identity | 20 |
-| CWP002 | ACR admin account disabled | 15 |
-| CWP003 | Key Vault declared | 15 |
-| CWP004 | No obvious inline secrets | 20 |
-| CWP005 | Container App ingress exposure | 15 |
-| CWP006 | Log Analytics declared | 15 |
+### Local project
 
-A pass earns the full weight, a warning earns half, and a critical result retains 20% partial credit for the portfolio scoring model.
+```json
+{
+  "entrypoint": "main.bicep",
+  "files": {
+    "main.bicep": "module app './modules/app.bicep' = { name: 'app' }",
+    "modules/app.bicep": "resource app 'Microsoft.App/containerApps@2026-01-01' = { ... }"
+  }
+}
+```
+
+The production analyzer:
+
+1. Validates paths, extensions, file count, and total size.
+2. Rejects external `br:` and `ts:` module references.
+3. Compiles the entrypoint with the official Bicep CLI.
+4. Returns structured compiler diagnostics on failure.
+5. Recursively discovers resources emitted through local modules.
+6. Evaluates effective ARM properties and returns evidence paths.
+
+## Rules
+
+| Rule | Control | Weight |
+|---|---|---:|
+| CWP001 | Managed identity enabled | 15 |
+| CWP002 | ACR admin account disabled | 10 |
+| CWP003 | Key Vault uses Azure RBAC | 10 |
+| CWP004 | No literal inline secrets | 15 |
+| CWP005 | Public ingress reviewed | 10 |
+| CWP006 | Centralized Container Apps logging | 10 |
+| CWP007 | Key Vault public access disabled | 10 |
+| CWP008 | ACR public access disabled | 10 |
+| CWP009 | Liveness and readiness probes | 5 |
+| CWP010 | Insecure HTTP disabled | 5 |
+
+A pass earns full weight, a warning earns half, and a critical finding earns 20% partial credit.
 
 | Score | Status |
-| ---: | --- |
+|---:|---|
 | 0-49 | Poor |
 | 50-69 | Needs Improvement |
 | 70-84 | Good |
 | 85-100 | Ready for Protection |
 
-The secure sample scores 100. The intentionally insecure sample scores 37.
+The secure sample scores 100. The intentionally insecure sample scores 23.
 
-## Run locally
+## API
 
-Prerequisite: Node.js 20.19+ or 22.12+.
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `POST` | `/api/analyze` | Compile and analyze a Bicep file or local project |
+| `GET` | `/api/rules` | Return rule metadata |
+| `GET` | `/api/health` | Process liveness |
+| `GET` | `/api/ready` | Key Vault-aware traffic readiness |
+
+Azure authentication excludes only `/api/health` and `/api/ready` so platform probes and availability tests can run without interactive login.
+
+## Local development
+
+Prerequisites:
+
+- Node.js 22
+- Azure CLI with Bicep installed, or a standalone Bicep CLI
 
 ```powershell
-npm install
+npm ci
 npm run dev
 ```
 
 - Portal: `http://localhost:5173`
 - API: `http://localhost:3001`
-- Vite proxies `/api` requests to the local API.
-- Without `KEY_VAULT_URI`, local readiness reports Key Vault as `not-configured` and remains ready.
+- Authentication is disabled locally.
+- Set `BICEP_CLI_PATH` to use a standalone Bicep executable.
+- Without `KEY_VAULT_URI`, local readiness reports Key Vault as `not-configured`.
 
-## Validate
+## Validation
 
 ```powershell
-npm run test
 npm run lint
 npm run typecheck
+npm test
 npm run build
+az bicep build --file .\infra\main.bicep --stdout
 npx playwright install chromium
 npm run test:e2e
-az bicep build --file .\infra\main.bicep
+docker build -t cwp-analyzer:local .
 ```
 
-`npm run test:e2e` builds and starts the production application locally, then
-runs the Playwright suite in Chromium. To run the same suite against the
-deployed Container App instead:
+## Azure environments
+
+The infrastructure supports `dev` and `prod`.
+
+| Setting | Dev | Prod |
+|---|---:|---:|
+| Minimum replicas | 0 | 1 |
+| Maximum replicas | 2 | 4 |
+| Log retention | 30 days | 90 days |
+| Entra authentication | Required | Required |
+| VNet and private endpoints | Enabled | Enabled |
+
+Resource names are derived from the environment, subscription, and region. ACR and Key Vault names are globally unique without manual edits.
+
+## Entra application
+
+Create a single-tenant web app registration for each environment and configure:
+
+- Redirect URI: `https://<container-app-host>/.auth/login/aad/callback`
+- Front-channel logout: `https://<container-app-host>/.auth/logout`
+- ID tokens enabled
+
+Set the client ID in the AZD environment:
 
 ```powershell
-$env:E2E_BASE_URL = "https://sdusi-analyzer-app.proudpond-a98f7b2a.eastus.azurecontainerapps.io"
-npm run test:e2e
-Remove-Item Env:E2E_BASE_URL
+azd env set ENTRA_CLIENT_ID "<application-client-id>"
+azd env set ENTRA_CLIENT_SECRET "<application-client-secret>"
+azd env set AZURE_ALERT_EMAIL "<operations-email>"
 ```
 
-The suite verifies the initial insecure analysis, secure sample analysis,
-edited-Bicep analysis, all six findings, API connectivity, and the health and
-rule-catalog contracts. Failure screenshots, videos, traces, and the HTML
-report are written to ignored local artifact directories.
+For GitHub deployments, store `ENTRA_CLIENT_SECRET` as an environment secret, not as a repository variable.
 
-The GitHub Actions workflow at `.github/workflows/ci.yml` runs linting,
-type-checking, unit/API tests, the production build, and Chromium E2E tests for
-pull requests and pushes to `main`.
+See [Microsoft Entra app registration](docs/entra-app-registration.md).
 
-## Run the production bundle
+## Provision and deploy
 
-```powershell
-npm run build
-$env:PORT = "8080"
-npm start
-```
+The deployment workflow uses a self-hosted runner with access to the private deployment network and authenticates to Azure with GitHub OIDC.
 
-Open `http://localhost:8080`.
-
-## Build the container
-
-```powershell
-docker build -t sdusi-analyzer-app:1.0.0 .
-docker run --rm -p 8080:8080 sdusi-analyzer-app:1.0.0
-```
-
-The container runs as the non-root Node user and exposes port 8080.
-
-## Azure deployment
-
-The project uses Azure Developer CLI with Bicep.
-
-### Intended resources
-
-| Resource | Name |
-| --- | --- |
-| Resource group | `sdusi-analyzer-rg` |
-| Container App | `sdusi-analyzer-app` |
-| Container Registry | `sdusianalyzeracr` |
-| Key Vault | `sdusi-analyzer-kv` |
-| Log Analytics | `sdusi-analyzer-law` |
-| Container Apps Environment | `sdusi-analyzer-env` |
-| User-assigned identity | `sdusi-analyzer-id` |
-
-ACR and Key Vault names are globally unique. If either name is unavailable, update the corresponding value in `infra/main.bicep`.
-
-### Prerequisites
-
-- Azure CLI
-- Azure Developer CLI
-- Docker or another AZD-compatible container build environment
-- Contributor access on the subscription
-- User Access Administrator or Role Based Access Control Administrator for RBAC assignments
-
-### Review the deployment
-
-```powershell
-az login
-az account set --subscription 279a73de-ecee-43ab-83a2-ccab2c1c1711
-
-az deployment sub what-if `
-  --location eastus `
-  --template-file .\infra\main.bicep `
-  --parameters environmentName=dev location=eastus
-```
-
-Review every proposed resource operation before deployment.
-
-### Deploy with AZD
+Manual preparation:
 
 ```powershell
 azd auth login
 azd env new dev
-azd env set AZURE_SUBSCRIPTION_ID 279a73de-ecee-43ab-83a2-ccab2c1c1711
-azd env set AZURE_LOCATION eastus
-azd provision --no-prompt
-
-# Run this only after the AcrPull role assignment has propagated.
-azd deploy --no-prompt
+azd env set AZURE_SUBSCRIPTION_ID "<subscription-id>"
+azd env set AZURE_LOCATION "eastus"
+azd env set ENTRA_CLIENT_ID "<dev-application-client-id>"
+azd env set ENTRA_CLIENT_SECRET "<dev-application-client-secret>"
+azd env set AZURE_ALERT_EMAIL "<operations-email>"
 ```
 
-Keep provisioning and application deployment separate so the managed identity's
-`AcrPull` assignment can propagate before the production revision starts. Deployment
-creates billable Azure resources. The Container App uses public ingress because the
-portal is intended to be reachable for a demonstration.
-
-If the local Docker credential helper prevents `azd deploy`, build the same image in
-Azure and update the Container App without enabling the ACR admin account:
+Always run validation and preview before deployment:
 
 ```powershell
-az acr build `
-  --registry sdusianalyzeracr `
-  --image sdusi-analyzer-app:1.0.0 `
-  .
-
-az containerapp update `
-  --resource-group sdusi-analyzer-rg `
-  --name sdusi-analyzer-app `
-  --image sdusianalyzeracr.azurecr.io/sdusi-analyzer-app:1.0.0
+azd provision --preview --no-prompt
 ```
 
-### Current deployment
+Provisioning and deployment are intentionally separate. The GitHub `Deploy` workflow builds an immutable commit-SHA image in ACR, updates the Container App, and verifies health and readiness.
 
-The validated development deployment is available at:
+## CI/CD
 
-<https://sdusi-analyzer-app.proudpond-a98f7b2a.eastus.azurecontainerapps.io>
+`.github/workflows/ci.yml` runs:
 
-### Verify
+- dependency restore and dependency review
+- lint and type-check
+- unit/API/infrastructure tests
+- production build
+- Bicep compilation and formatting checks
+- production container build
+- Trivy vulnerability scan
+- SPDX JSON SBOM generation
+- Chromium end-to-end tests
 
-```powershell
-azd env get-values
-```
+`.github/workflows/deploy.yml` uses:
 
-Open the `WEB_URL` value and verify:
+- GitHub Environment approval for production
+- Azure workload identity federation
+- AZD preview and provisioning
+- immutable image tags
+- post-deployment health/readiness verification
 
-1. API status shows online.
-2. The secure sample scores 100.
-3. The insecure sample scores 37.
-4. `/api/health` returns HTTP 200.
-5. `/api/ready` reports Key Vault as available.
-6. The active revision is healthy.
-7. Logs arrive in `sdusi-analyzer-law`.
+## Documentation
 
-### Remove Azure resources
-
-```powershell
-azd down
-```
-
-Review the prompt carefully. Key Vault soft delete and purge protection can retain the vault after resource-group deletion.
+- [Production implementation plan](.azure/deployment-plan.md)
+- [Operations runbook](docs/operations-runbook.md)
+- [Threat model](docs/threat-model.md)
+- [Microsoft Entra app registration](docs/entra-app-registration.md)
+- [Architecture and Bicep study guide](docs/wiki/cloud-workload-protection-readiness-analyzer.md)
+- [Presentation notes](docs/Cloud-Workload-Protection-Analyzer-Presentation-Notes.md)
 
 ## Project structure
 
 ```text
-sdusi-analyzer-app/
 ├── .azure/
-│   └── deployment-plan.md
+├── .github/workflows/
 ├── docs/
+├── e2e/
 ├── infra/
 │   ├── main.bicep
-│   ├── main.parameters.json
+│   ├── bicepconfig.json
 │   └── modules/
 ├── server/
 │   ├── app.ts
-│   ├── app.test.ts
-│   ├── index.ts
-│   └── keyVault.ts
+│   ├── bicepCompiler.ts
+│   ├── keyVault.ts
+│   └── telemetry.ts
 ├── src/
 │   ├── analyzer/
 │   ├── api/
 │   ├── components/
-│   ├── samples/
-│   ├── App.tsx
-│   └── main.tsx
-├── .dockerignore
+│   └── samples/
 ├── Dockerfile
 ├── azure.yaml
-├── package.json
-└── README.md
+└── package.json
 ```
 
-## Documentation
+## Security scope
 
-- [Architecture and Bicep study guide](docs/wiki/cloud-workload-protection-readiness-analyzer.md)
-- [Azure Portal deployment guide](docs/Azure-Portal-Deployment-Guide.docx)
-- [Deployment plan](.azure/deployment-plan.md)
-
-## Limitations
-
-- Rules use regular expressions rather than the Bicep AST.
-- Modules, symbolic evaluation, and effective Azure state are not analyzed.
-- The API is intentionally anonymous for the public portfolio demo.
-- Key Vault is used for managed-identity readiness validation; the browser receives no secret.
-- The deployable app uses public ingress, while the fictional secure workload sample demonstrates internal ingress.
-- A production service should add organizational authentication, private networking where appropriate, policy enforcement, image scanning, and operational alerting.
+This analyzer provides deterministic infrastructure-readiness checks. It complements but does not replace Azure Policy, Microsoft Defender for Cloud, container image scanning, threat modeling, penetration testing, or professional security review.

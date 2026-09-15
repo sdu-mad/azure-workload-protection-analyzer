@@ -1,307 +1,340 @@
-# Azure Deployment Plan
+# Production Readiness Implementation Plan
 
-> **Status:** Deployed
+> **Status:** Validated
 
-Generated: 2026-09-13
+Updated: 2026-09-15
 
----
+## 1. Objective
 
-## 1. Project Overview
+Upgrade the deployed Cloud Workload Protection Readiness Analyzer from an educational regex-based portfolio application to a production implementation for **dev** and **prod** environments.
 
-**Goal:** Expand the Cloud Workload Protection Readiness Analyzer from a browser-only MVP into an Azure-ready full-stack portfolio application. One Azure Container App will serve the React portal and a Node.js/TypeScript API, analyze Bicep on the server, expose health and rule metadata endpoints, verify Key Vault connectivity through managed identity, and deploy through repeatable Bicep Infrastructure as Code.
+The completed system will:
 
-**Path:** Add Components
+- Compile Bicep with the official Bicep compiler before analysis.
+- Analyze the compiled ARM template rather than raw-text regular expressions.
+- Resolve local Bicep modules and report compiler diagnostics.
+- Protect the application with Microsoft Entra ID built-in Container Apps authentication.
+- Use VNet integration and private endpoints for Azure Container Registry and Key Vault.
+- Add Application Insights, alerts, availability monitoring, and production health probes.
+- Add Bicep, security, dependency, container, and deployment-preview gates to CI.
+- Support environment-specific naming, scale, retention, networking, and deployment parameters.
+- Preserve the existing user experience while expanding the API contract for multi-file Bicep projects.
 
-The analyzer remains an educational static-readiness tool. It will not claim to scan deployed Azure state or replace Microsoft Defender for Cloud, Azure Policy, image scanning, or professional security review.
+## 2. Delivery Mode
 
----
+| Attribute | Decision |
+|---|---|
+| Workspace mode | Modify existing deployed application |
+| Deployment recipe | Azure Developer CLI with modular Bicep |
+| Environments | `dev`, `prod` |
+| Runtime | Node.js 22 container on Azure Container Apps |
+| Analyzer implementation | Official Bicep CLI compilation plus semantic ARM-template rule evaluation |
+| Authentication | Container Apps built-in Microsoft Entra authentication |
+| Network | External authenticated app; VNet-integrated environment; private ACR and Key Vault endpoints |
+| Observability | Log Analytics and workspace-based Application Insights |
+| Persistence | None for submitted Bicep; temporary compilation workspace deleted after every request |
 
-## 2. Requirements
+## 3. Important Implementation Constraint
 
-| Attribute | Value |
-|-----------|-------|
-| Classification | Portfolio development |
-| Scale | Small; single Container App, 0.5 vCPU, 1 GiB, 0-2 replicas |
-| Budget | Cost-optimized |
-| Subscription | Visual Studio Enterprise Subscription (`279a73de-ecee-43ab-83a2-ccab2c1c1711`) |
-| Tenant | `d2f91667-b16e-493b-af5c-62a4034bb8a5` |
-| Location | `eastus` |
-| Topology | Single container serving React portal and Node.js API |
-| Database | None |
-| Authentication | None for the portfolio demo |
-| API persistence | None; requests are stateless |
+Microsoft does not publish a supported native JavaScript/TypeScript Bicep AST parser. The official parser is implemented in the .NET Bicep codebase.
 
-### Backend API contract
+To keep the existing Node.js application while using supported Bicep semantics, the production analyzer will:
 
-| Method and path | Purpose |
-|-----------------|---------|
-| `POST /api/analyze` | Validate request size and analyze supplied Bicep on the server |
-| `GET /api/rules` | Return public rule IDs, descriptions, categories, weights, and recommendations |
-| `GET /api/health` | Liveness response without checking external dependencies |
-| `GET /api/ready` | Readiness response including configured Key Vault connectivity |
+1. Accept an entrypoint plus a validated map of local project files.
+2. Write the files to an isolated temporary directory.
+3. Invoke a pinned official Bicep CLI binary with `build --stdout --no-restore`.
+4. Parse the compiled ARM JSON.
+5. Evaluate rules against resource types and effective compiled properties.
+6. Return structured compiler diagnostics when compilation fails.
+7. Delete the temporary directory in a `finally` block.
 
-The readiness endpoint will never return secret values. Key Vault checks are disabled locally unless explicitly configured. Production uses a user-assigned managed identity; local development uses `DefaultAzureCredential`.
+External registry module restore will be disabled for anonymous analysis. Local relative modules will be supported. This prevents untrusted requests from triggering network fetches or credential use.
 
----
+## 4. Application Changes
 
-## 3. Components Detected
+### Analyzer contract
 
-| Component | Type | Technology | Path |
-|-----------|------|------------|------|
-| Analyzer portal | Frontend | React 19, TypeScript, Vite | `src/` |
-| Analysis engine | Shared library | TypeScript and regular-expression rules | `src/analyzer/` |
-| Sample workloads | Demo content | Azure Bicep | `src/samples/` |
-| Existing secure workload | Educational IaC sample | Azure Bicep | `src/samples/secure-workload.bicep` |
-| Documentation | Wiki and Word runbook | Markdown and DOCX | `docs/` |
-| Backend API | New component | Node.js, TypeScript, Express | `server/` |
-| Production container | New component | Multi-stage Docker and Nginx-free Node static serving | `Dockerfile` |
-| Deployable infrastructure | New component | AZD with modular Bicep | `infra/`, `azure.yaml` |
-| Automated tests | New component | Vitest and Supertest | `src/**/*.test.ts`, `server/**/*.test.ts` |
+- Replace `analyzeBicep(source)` with an asynchronous project analysis API.
+- Support:
+  - Backward-compatible `{ source }` requests.
+  - Production `{ entrypoint, files }` requests for local modules.
+- Enforce:
+  - Maximum file count.
+  - Maximum per-file and total project size.
+  - Normalized relative paths only.
+  - `.bicep` and `.json` file extensions only.
+  - Compiler timeout and bounded output.
+  - No external module restore.
 
-### Existing validation
+### Semantic rules
 
-- The current frontend compiles successfully.
-- ESLint passes.
-- Secure sample expected score: 100.
-- Insecure sample expected score: 37 under the selected partial-credit model.
-- No backend, API tests, Dockerfile, Azure Developer CLI configuration, or deployable `infra/` tree currently exists.
+The initial production rule set will evaluate compiled ARM resources for:
 
----
+- Managed identity configuration.
+- ACR admin account disabled.
+- Key Vault declaration and RBAC authorization.
+- Inline secret-like literal values.
+- Public Container App ingress.
+- Log Analytics / Container Apps logging.
+- Minimum TLS and insecure transport settings where represented.
+- Key Vault public network access.
+- ACR public network access.
+- Health and readiness probe configuration.
 
-## 4. Recipe Selection
+Rules will return evidence paths from the compiled template and compiler diagnostics.
 
-**Selected:** AZD with Bicep
+### API and UI
 
-**Rationale:**
+- Make `/api/analyze` asynchronous.
+- Return compilation status, diagnostics, analyzed resource count, and module-aware findings.
+- Keep health endpoints anonymous for platform probes.
+- Protect application and analysis endpoints with Container Apps built-in auth in Azure.
+- Add UI support for compiler diagnostics and semantic-analysis metadata.
+- Keep local development authentication disabled.
 
-- AZD is the default fit for a new Azure-ready containerized application.
-- Bicep preserves the project's Infrastructure-as-Code learning goal.
-- `azd up` can provision the infrastructure, build/publish the container, configure the registry link, and deploy the application.
-- A two-phase Container Apps pattern avoids the system-identity/ACR circular dependency.
-- Environment values and deployment outputs are managed consistently.
+### Runtime packaging
 
-The educational Bicep files under `src/samples/` remain analyzer inputs. Deployable Bicep will live under `infra/` so demonstration input is not confused with real infrastructure.
+- Pin and install the official Bicep CLI in the production image.
+- Run as the non-root Node user.
+- Keep a read-only application filesystem except for the OS temporary directory.
+- Add a Docker health check against `/api/health`.
 
----
-
-## 5. Architecture
-
-**Stack:** One public Azure Container App on the Consumption plan
+## 5. Azure Architecture
 
 ```text
-Browser
-   |
-   | HTTPS
-   v
-Azure Container App: sdusi-analyzer-app
-   |-- Serves React/Vite static assets
-   |-- Hosts Node.js/TypeScript API
-   |-- Executes the shared Bicep analyzer
-   |
-   +--> Azure Key Vault: sdusi-analyzer-kv
-   |      Managed identity; connectivity/readiness only
-   |
-   +--> Azure Container Registry: sdusianalyzeracr
-   |      AcrPull through managed identity
-   |
-   +--> Log Analytics: sdusi-analyzer-law
-          Container and platform logs
+Authenticated user
+      |
+      | HTTPS + Microsoft Entra ID
+      v
+Azure Container App (external ingress)
+      |
+      | VNet-integrated Container Apps environment
+      |
+      +--> ACR private endpoint + private DNS
+      +--> Key Vault private endpoint + private DNS
+      +--> Log Analytics + Application Insights
 ```
 
-### Service mapping
+### Resources
 
-| Component | Azure service | SKU or configuration |
-|-----------|---------------|----------------------|
-| React portal and API | Azure Container Apps | Consumption, 0.5 vCPU, 1 GiB, 0-2 replicas |
-| Container image | Azure Container Registry | Basic for cost optimization; admin disabled |
-| Runtime configuration check | Azure Key Vault | Standard, RBAC, soft delete, purge protection |
-| Central logs | Log Analytics workspace | 30-day retention |
-| Hosting boundary | Container Apps Environment | Consumption |
-| Workload identity | User-assigned managed identity | `sdusi-analyzer-id`; avoids first-deployment ACR dependency cycle |
+| Resource | Dev | Prod |
+|---|---|---|
+| Resource group | Separate | Separate |
+| Container App | 0-2 replicas | 1-4 replicas |
+| Container Apps environment | VNet integrated | VNet integrated |
+| ACR | Premium, private endpoint | Premium, private endpoint |
+| Key Vault | RBAC, private endpoint | RBAC, private endpoint |
+| Log Analytics | 30-day retention | 90-day retention |
+| Application Insights | Enabled | Enabled |
+| Alerts | Basic | Availability, failed requests, server errors, unhealthy revisions |
 
-### Security decisions
+### Naming
 
-- API and portal share one origin, so CORS is unnecessary.
-- JSON request bodies are capped and validated.
-- Bicep source is processed in memory and is never persisted or logged.
-- Responses use security headers.
-- Production authentication to Azure uses `ManagedIdentityCredential` with the user-assigned client ID.
-- Local Azure authentication uses `DefaultAzureCredential`.
-- The runtime identity receives `AcrPull` at ACR scope.
-- The runtime identity receives `Key Vault Secrets User` at Key Vault scope.
-- ACR administrator access remains disabled.
-- Key Vault uses RBAC, soft delete, and purge protection.
-- No secret value is returned to the browser.
-- The app uses an immutable deployment image tag generated by AZD/deployment tooling.
-- Public ingress is required for the portfolio portal; this is documented as an intentional difference from the fictional secure workload sample.
+- Derive globally unique resource names from subscription, environment name, and location with `uniqueString()`.
+- Keep human-readable prefixes.
+- Validate length and allowed characters.
+- Remove hardcoded subscription IDs, resource names, and environment tags.
 
-### Analyzer integrity improvements
+### Identity and RBAC
 
-- Move shared rule metadata into serializable definitions usable by frontend and backend.
-- Keep rule evaluation deterministic.
-- Add tests for every rule, comments, malformed input, request limits, score boundaries, and both samples.
-- Frontend calls `POST /api/analyze`; it no longer treats browser-only analysis as the authoritative path.
-- A development-only Vite proxy forwards `/api` to the local API.
-- API failures are surfaced in the UI rather than silently falling back to local success.
+- Retain a user-assigned managed identity for stable ACR and Key Vault access.
+- Grant `AcrPull` only at ACR scope.
+- Grant `Key Vault Secrets User` only at Key Vault scope.
+- Use managed identity in production and `DefaultAzureCredential` only for local development.
+- Use workload identity federation for GitHub Actions Azure access; no client secrets.
 
----
+### Microsoft Entra authentication
 
-## 6. Provisioning Limit Checklist
+- Add a `Microsoft.App/containerApps/authConfigs` child resource.
+- Parameterize the Entra client ID and OpenID issuer.
+- Redirect unauthenticated browser requests to Microsoft Entra ID.
+- Return HTTP 401 for unauthenticated API requests where appropriate.
+- Keep `/api/health` and `/api/ready` available to Container Apps probes through auth exclusions or platform-compatible configuration.
+- Do not commit app-registration credentials.
+- Supply the Entra application credential through an environment-scoped secret and secure Bicep parameter; store it as a Container App secret and rotate it before expiry.
 
-The Microsoft.App quota extension returned no quota rows for this subscription and region. The required fallback was used: current Azure resource inventory plus official service limits. Current `eastus` count is zero for every planned resource type.
+The Entra app registration is tenant-owned and will be created/configured through the dedicated app-registration workflow or supplied as deployment parameters.
 
-| Resource type | Number to deploy | Total after deployment | Limit or quota | Notes |
-|---------------|------------------|------------------------|----------------|-------|
-| `Microsoft.App/managedEnvironments` | 1 | 1 | 15 environments per region by default | Official Container Apps quota documentation; within limit |
-| `Microsoft.App/containerApps` | 1 | 1 | No fixed app-count limit; 100 Consumption cores per environment default | Planned app uses at most 1 core across two 0.5-core replicas |
-| `Microsoft.ContainerRegistry/registries` | 1 | 1 | No quota row or fixed subscription count exposed for this plan | Basic registry; one-resource deployment is not capacity constrained |
-| `Microsoft.KeyVault/vaults` | 1 | 1 | 1,000 standard vaults per subscription per region | Official Azure service limits; within limit |
-| `Microsoft.OperationalInsights/workspaces` | 1 | 1 | 250 workspaces per subscription per region | Official Azure service limits; within limit |
-| `Microsoft.ManagedIdentity/userAssignedIdentities` | 1 | 1 | 1,000 user-assigned identities per subscription | Official Azure service limits; within limit |
-| `Microsoft.Authorization/roleAssignments` | 2 | Existing count plus 2 | 4,000 role assignments per subscription | AcrPull and Key Vault Secrets User; within limit |
+## 6. Bicep Module Changes
 
-**Status:** All planned resources are within documented limits.
+| File / module | Planned change |
+|---|---|
+| `infra/main.bicep` | Environment-aware names, parameters, network, observability, auth wiring |
+| `infra/main.parameters.json` | Add AZD environment mappings without secrets |
+| `infra/modules/network.bicep` | VNet, Container Apps subnet, private-endpoint subnet |
+| `infra/modules/private-dns.bicep` | ACR and Key Vault private DNS zones and VNet links |
+| `infra/modules/private-endpoints.bicep` | ACR and Key Vault private endpoints and DNS groups |
+| `infra/modules/container-registry.bicep` | Premium SKU, private access, retention and policy hardening |
+| `infra/modules/key-vault.bicep` | Private access, RBAC, retention protections |
+| `infra/modules/monitoring.bicep` | Log Analytics, Application Insights, action group, alerts |
+| `infra/modules/container-environment.bicep` | VNet integration and logs |
+| `infra/modules/container-app.bicep` | Real probes, auth inputs, hardened runtime, scale by environment |
+| `infra/modules/container-app-auth.bicep` | Microsoft Entra built-in authentication |
 
-**Capacity note:** Regional service availability and transient platform capacity are still checked during validation and deployment. No quota increase is required for this small portfolio workload.
+## 7. CI/CD and Supply Chain
 
----
+The GitHub workflow will add:
 
-## 7. Execution Checklist
+- `npm ci`
+- lint and type-check
+- unit/API tests
+- production build
+- Bicep formatting check and compilation
+- Bicep linter configuration
+- Docker build
+- container vulnerability scan
+- dependency review for pull requests
+- SBOM generation
+- artifact upload
+- deployed E2E tests after environment deployment
 
-### Phase 1: Planning
+A separate environment deployment workflow will:
 
-- [x] Analyze workspace
-- [x] Gather requirements
-- [x] Confirm subscription and location
-- [x] Prepare resource inventory
-- [x] Fetch quotas and validate capacity
-- [x] Scan codebase
-- [x] Select recipe
-- [x] Plan architecture
-- [x] User approved this plan
+- Use GitHub OIDC / Azure workload identity federation.
+- Run subscription-scope `what-if`.
+- Require GitHub Environment approval for prod.
+- Deploy the same immutable image digest from dev to prod.
+- Run post-deployment health, readiness, API, and browser verification.
+- Preserve a rollback target.
 
-### Phase 2: Execution
+## 8. Test Plan
 
-- [x] Load selected service and AZD references
-- [x] Refactor analyzer metadata for API serialization
-- [x] Implement `POST /api/analyze`
-- [x] Implement `GET /api/rules`
-- [x] Implement `GET /api/health`
-- [x] Implement Key Vault-aware `GET /api/ready`
-- [x] Add request validation, size limits, security headers, and explicit error responses
-- [x] Integrate the React portal with the API
-- [x] Add frontend loading, connectivity, and failure states
-- [x] Add analyzer and API tests
-- [x] Add a multi-stage production Dockerfile and `.dockerignore`
-- [x] Add local combined development scripts
-- [x] Generate AZD configuration
-- [x] Generate modular Bicep for ACR, Key Vault, Log Analytics, environment, identity, RBAC, and Container App
-- [x] Add health and readiness endpoints and container health check
-- [x] Update README, wiki, and deployment documentation
-- [x] Verify the production portal and API bundle locally
-- [x] Update plan status to `Ready for Validation`
+### Unit tests
 
-### Phase 3: Validation
+- Compiled ARM semantic rules.
+- Resource and nested-resource discovery.
+- Secure and insecure templates.
+- Module-aware compilation.
+- Compiler diagnostics.
+- Path traversal rejection.
+- File count and total-size limits.
+- Timeout and compiler failure behavior.
+- Secret-pattern false-positive and false-negative fixtures.
 
-- [x] Invoke the Azure validation workflow
-- [x] 1. AZD installation
-- [x] 2. `azure.yaml` schema validation
-- [x] 3. AZD environment setup
-- [x] 4. AZD authentication check
-- [x] 5. Subscription and location check
-- [x] 6. Aspire pre-provisioning checks (not applicable)
-- [x] 7. Provision preview
-- [x] 8. Build verification
-- [x] 9. Docker build-context validation
-- [x] 10. Package validation
-- [x] 11. Azure Policy validation
-- [x] 12. Aspire post-provisioning checks (not applicable)
-- [x] Static RBAC review
-- [x] Confirm no secrets or credentials are committed
-- [x] Populate validation proof
-- [x] Set status to `Validated`
+### API tests
 
-### Phase 4: Deployment
+- Backward-compatible single-source request.
+- Multi-file project request.
+- Invalid paths and unsupported extensions.
+- Compiler error response.
+- Health and readiness.
+- Authentication header behavior where handled by the application.
 
-- [x] Invoke the Azure deployment workflow
-- [x] Review cost and high-impact operations before deployment
-- [x] Provision infrastructure
-- [x] Build and publish the image
-- [x] Deploy the Container App revision
-- [x] Verify portal, API, Key Vault readiness, RBAC, image identity, and Log Analytics
-- [x] Record endpoint and deployment evidence
-- [x] Set status to `Deployed`
+### End-to-end tests
 
----
+- Local unauthenticated development flow.
+- Deployed authenticated browser flow.
+- Secure/insecure/module sample results.
+- Health/readiness contracts.
+- Rule catalog and compiler metadata.
 
-## 8. Validation Proof
+### Infrastructure tests
 
-| Check | Command | Result | Timestamp |
-|-------|---------|--------|-----------|
-| Unit and API tests | `npm run test` | Pass: 22 tests | 2026-09-13 |
-| Lint | `npm run lint` | Pass | 2026-09-13 |
-| TypeScript and production build | `npm run build` | Pass | 2026-09-13 |
-| Bicep compilation | `az bicep build --file infra/main.bicep --stdout` | Pass | 2026-09-13 |
-| Production runtime | Health, readiness, rules, analysis, and portal requests on port 8080 | Pass; secure score 100 | 2026-09-13 |
-| AZD installation | `azd version` | Pass: 1.22.1; upgrade recommended | 2026-09-13 |
-| AZD environment | `azd env get-values` | Pass: subscription and eastus configured | 2026-09-13 |
-| Docker context | Confirmed `Dockerfile` and `package-lock.json` | Pass | 2026-09-13 |
-| Static RBAC review | Reviewed role assignments in `infra/modules` | Pass: AcrPull and Key Vault Secrets User at resource scopes | 2026-09-13 |
-| AZD authentication | `azd auth login --check-status` | Pass | 2026-09-13 |
-| Provision preview | `azd provision --preview --no-prompt` | Pass: six Azure resources planned, no changes applied | 2026-09-13 |
-| Docker image | `docker build --tag sdusi-analyzer-app:validation .` | Pass | 2026-09-13 |
-| Container runtime | Production container on port 18080 | Pass: portal, health, readiness contract, and secure score 100 | 2026-09-13 |
-| Package validation | `azd package --no-prompt` | Pass | 2026-09-13 |
-| Azure Policy validation | Policy assignment review plus successful preview | Pass: Microsoft cloud security benchmark assignment; no preview conflict | 2026-09-13 |
+- `az bicep build`
+- Bicep linter
+- dev and prod parameter compilation
+- subscription deployment `what-if`
+- static assertions for private networking, RBAC scope, auth, probes, scale, and observability
 
-**Validation status:** All planned application, container, infrastructure, packaging, policy, and preview checks passed before deployment.
+## 9. Documentation and Presentation
 
----
+- Rewrite README and wiki for authenticated production use.
+- Add environment provisioning and app-registration instructions.
+- Add operations, alert response, rollback, and incident runbooks.
+- Add data-handling and threat-model documentation.
+- Update the presentation and speaker notes to state the production architecture and semantic analyzer implementation without a portfolio/production distinction.
 
-## 9. Deployment Evidence
+## 10. Cost and Impact
 
-| Check | Result | Timestamp |
-|-------|--------|-----------|
-| Azure infrastructure | Provisioning succeeded in `sdusi-analyzer-rg` | 2026-09-14 |
-| Production image | ACR cloud build `ca1` succeeded; `sdusianalyzeracr.azurecr.io/sdusi-analyzer-app:1.0.0` | 2026-09-14 |
-| Container App revision | `sdusi-analyzer-app--0000001` is healthy, running, and receives 100% of traffic | 2026-09-14 |
-| Public endpoint | `https://sdusi-analyzer-app.proudpond-a98f7b2a.eastus.azurecontainerapps.io` returned HTTP 200 and loaded the portal | 2026-09-14 |
-| Health API | `GET /api/health` returned `status: ok` | 2026-09-14 |
-| Readiness API | `GET /api/ready` returned `status: ready`; Key Vault returned `status: available` | 2026-09-14 |
-| Rule catalog | `GET /api/rules` returned all six CWP rules | 2026-09-14 |
-| Secure analysis | `POST /api/analyze` returned score 100 and `Ready for Protection` | 2026-09-14 |
-| Insecure analysis | `POST /api/analyze` returned score 37 and `Poor` | 2026-09-14 |
-| Managed identity | Principal `d37f0169-96eb-4644-9496-ba8d750c13aa` has `AcrPull` on ACR and `Key Vault Secrets User` on Key Vault | 2026-09-14 |
-| Log Analytics | `ContainerAppConsoleLogs_CL` contains the production revision startup record on port 8080 | 2026-09-14 |
-| Browser E2E | Four Playwright tests passed against both the local production server and deployed Container App | 2026-09-14 |
-| CI quality gate | `.github/workflows/ci.yml` runs lint, type-check, unit/API tests, build, and Chromium E2E | 2026-09-14 |
+The selected target materially increases Azure cost:
 
-**Deployment status:** The full-stack analyzer is deployed and operational. The application image was built remotely with ACR Tasks after the local Docker credential helper encountered a memory error; ACR admin access remained disabled.
+- ACR Premium is required for private endpoints.
+- VNet and private endpoints add hourly/data-processing costs.
+- Prod keeps at least one Container App replica.
+- Application Insights and 90-day Log Analytics retention add ingestion/retention costs.
+- Availability tests and alerting may add monitoring costs.
 
----
+Provisioning or replacing the current Container Apps environment network configuration may require a new environment because VNet configuration is immutable after creation. Deployment will be handled only after validation and explicit deployment approval.
 
-## 9. Files to Generate or Modify
+## 11. Role Assignment Verification
 
-| File or path | Purpose | Status |
-|--------------|---------|--------|
-| `.azure/deployment-plan.md` | Deployment source of truth | Ready for validation |
-| `server/` | Node.js/TypeScript API and Azure integration | Complete |
-| `src/api/` | Typed frontend API client | Complete |
-| `src/**/*.test.ts` | Analyzer tests | Complete |
-| `server/**/*.test.ts` | API tests | Complete |
-| `Dockerfile` | Production full-stack image | Complete; Docker runtime unavailable locally |
-| `.dockerignore` | Minimal, safe container context | Complete |
-| `azure.yaml` | AZD service configuration | Complete |
-| `infra/main.bicep` | Main Azure deployment entry point | Complete |
-| `infra/main.parameters.json` | AZD environment parameter mapping | Complete |
-| `infra/modules/` | ACR, identity, RBAC, Key Vault, monitoring, and Container Apps modules | Complete |
-| `README.md` | Full-stack local and Azure instructions | Complete |
-| `docs/wiki/cloud-workload-protection-readiness-analyzer.md` | Updated architecture and API guide | Complete |
+- Status: Verified
+- Identity checked: user-assigned Container App managed identity
+- Roles confirmed: `AcrPull` at the registry scope; `Key Vault Secrets User` at the vault scope
+- Issues: none; both assignments use data-plane roles and resource-level least-privilege scopes
 
----
+## 12. Validation Proof
 
-## 10. Next Steps
+Validated on 2026-09-15 against **Visual Studio Enterprise Subscription** (`279a73de-ecee-43ab-83a2-ccab2c1c1711`) in `eastus`.
 
-1. Run the mandatory Azure validation workflow.
-2. Review validation evidence and unresolved environmental limitations.
-3. Request a separate deployment confirmation before creating billable Azure resources.
+| Check | Result |
+|---|---|
+| `npm run lint` | Pass |
+| `npm run typecheck` | Pass |
+| `npm test` | Pass, 17 tests |
+| `npm run build` | Pass |
+| `npm run test:e2e` | Pass, 4 Chromium tests |
+| `az bicep build --file .\infra\main.bicep --stdout` | Pass |
+| Official Bicep formatting | Pass |
+| `docker build --tag cwp-analyzer:local .` | Pass |
+| Container health and semantic compilation | Pass; Bicep CLI 0.47.16, insecure score 23, secure score 100 |
+| `azd show --output json` | Pass; `azure.yaml` parsed |
+| `azd package --no-prompt` | Pass |
+| `azd provision --preview --no-prompt` | Pass; subscription preview generated with no changes applied |
+| Azure Policy assignment review | Pass; only the default Defender for Cloud assignment is present |
+| Static RBAC review | Pass; resource-scoped `AcrPull` and `Key Vault Secrets User` |
+
+The preview used validation-only Entra placeholders because the tenant-owned dev/prod registrations are a deployment prerequisite, not repository configuration. Real `ENTRA_CLIENT_ID` and `ENTRA_CLIENT_SECRET` values must be stored in the corresponding GitHub Environment before deployment.
+
+## 13. Execution Checklist
+
+### Phase 1 - Plan
+
+- [x] Confirm full production target.
+- [x] Confirm dev and prod environments.
+- [x] Analyze current application and deployed infrastructure.
+- [x] Research official Bicep compiler, Container Apps auth, networking, probes, and monitoring patterns.
+- [x] Confirm Azure subscription, region, tenant app-registration approach, and cost acceptance.
+- [x] Obtain implementation approval.
+
+### Phase 2 - Implement
+
+- [x] Add semantic compiler service and project request model.
+- [x] Replace regex rules with compiled ARM semantic rules.
+- [x] Add analyzer security controls and tests.
+- [x] Update API and UI.
+- [x] Harden the runtime image.
+- [x] Add dev/prod Bicep architecture.
+- [x] Add Entra auth configuration.
+- [x] Add private networking.
+- [x] Add Application Insights and alerts.
+- [x] Add CI/CD and supply-chain gates.
+- [x] Update documentation, runbooks, presentation, and speaker notes.
+
+### Phase 3 - Validate
+
+- [x] All validation checks pass.
+  - [x] 1. AZD installation.
+  - [x] 2. `azure.yaml` schema validation.
+  - [x] 3. AZD environment setup.
+  - [x] 4. Authentication check.
+  - [x] 5. Subscription and location check.
+  - [x] 6. Aspire pre-provisioning checks (not applicable).
+  - [x] 7. Provision preview.
+  - [x] 8. Build verification.
+  - [x] 9. Docker build-context validation.
+  - [x] 10. Package validation.
+  - [x] 11. Azure Policy validation.
+  - [x] 12. Aspire post-provisioning checks (not applicable).
+- [x] Set plan status to `Ready for Validation`.
+- [x] Invoke the Azure validation workflow.
+- [x] Resolve all validation findings.
+
+### Phase 4 - Deploy
+
+- [ ] Obtain explicit deployment approval.
+- [ ] Deploy dev.
+- [ ] Verify authenticated functionality and monitoring.
+- [ ] Promote immutable image to prod.
+- [ ] Verify prod and rollback readiness.
+- [ ] Set status to `Deployed`.
