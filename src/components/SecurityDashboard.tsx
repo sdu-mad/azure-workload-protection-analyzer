@@ -15,6 +15,12 @@ export function SecurityDashboard({ result }: SecurityDashboardProps) {
           <p>Weighted readiness across core protection categories.</p>
         </div>
       </div>
+      <div className="compilation-summary" aria-label="Bicep compilation summary">
+        <span>Official Bicep compiler</span>
+        <strong>{result.compilation.resourceCount} resources</strong>
+        <span>{result.compilation.fileCount} project files</span>
+        <span>{result.compilation.diagnostics.length} compiler warnings</span>
+      </div>
       <ScoreCard score={result.score} status={result.status} />
       <div className="category-grid">
         {result.categories.map((category) => (

@@ -4,9 +4,13 @@
 dist
 dist-server
 docs
+playwright-report
+readiness-eval-runs
+test-results
 node_modules
 npm-debug.log*
 *.local
 *.log
 .env
 .env.*
+*.pptx

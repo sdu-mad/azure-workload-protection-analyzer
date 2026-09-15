@@ -8,10 +8,10 @@ test.describe('Cloud Workload Protection Readiness Analyzer', () => {
 
   test('analyzes the insecure sample on startup', async ({ page }) => {
     await expect(
-      page.getByLabel('Readiness score: 37 out of 100'),
+      page.getByLabel('Readiness score: 23 out of 100'),
     ).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Poor' })).toBeVisible()
-    await expect(page.locator('article.finding')).toHaveCount(6)
+    await expect(page.locator('article.finding')).toHaveCount(10)
     await expect(
       page.locator('article.finding').filter({ hasText: 'CWP004' }),
     ).toContainText('Critical')
@@ -26,7 +26,7 @@ test.describe('Cloud Workload Protection Readiness Analyzer', () => {
     await expect(
       page.getByRole('heading', { name: 'Ready for Protection' }),
     ).toBeVisible()
-    await expect(page.locator('.severity-badge.severity-pass')).toHaveCount(6)
+    await expect(page.locator('.severity-badge.severity-pass')).toHaveCount(10)
   })
 
   test('reanalyzes edited Bicep and reports public ingress', async ({ page }) => {
@@ -41,7 +41,7 @@ test.describe('Cloud Workload Protection Readiness Analyzer', () => {
     await page.getByRole('button', { name: 'Analyze workload' }).click()
 
     await expect(
-      page.getByLabel('Readiness score: 93 out of 100'),
+      page.getByLabel('Readiness score: 95 out of 100'),
     ).toBeVisible()
     await expect(
       page.locator('article.finding').filter({ hasText: 'CWP005' }),
@@ -59,6 +59,6 @@ test.describe('Cloud Workload Protection Readiness Analyzer', () => {
     const rulesResponse = await request.get('/api/rules')
     expect(rulesResponse.ok()).toBeTruthy()
     const catalog = await rulesResponse.json()
-    expect(catalog).toHaveLength(6)
+    expect(catalog).toHaveLength(10)
   })
 })

@@ -1,10 +1,23 @@
 import type {
   AnalysisResult,
+  BicepProject,
+  CompilerDiagnostic,
   SecurityRuleMetadata,
 } from '../analyzer/types'
 
 interface ApiError {
   error?: string
+  diagnostics?: CompilerDiagnostic[]
+}
+
+export class AnalysisApiError extends Error {
+  constructor(
+    message: string,
+    readonly diagnostics: CompilerDiagnostic[] = [],
+  ) {
+    super(message)
+    this.name = 'AnalysisApiError'
+  }
 }
 
 export interface HealthResponse {
@@ -17,19 +30,24 @@ export interface HealthResponse {
 const parseResponse = async <T>(response: Response): Promise<T> => {
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ApiError
-    throw new Error(body.error ?? `Request failed with status ${response.status}`)
+    throw new AnalysisApiError(
+      body.error ?? `Request failed with status ${response.status}`,
+      body.diagnostics,
+    )
   }
 
   return response.json() as Promise<T>
 }
 
 export const analyzeWorkload = async (
-  source: string,
+  source: string | BicepProject,
 ): Promise<AnalysisResult> => {
   const response = await fetch('/api/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source }),
+    body: JSON.stringify(
+      typeof source === 'string' ? { source } : source,
+    ),
   })
 
   return parseResponse<AnalysisResult>(response)

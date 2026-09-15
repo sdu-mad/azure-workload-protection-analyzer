@@ -6,6 +6,25 @@ export type SecurityCategory =
   | 'Registry'
   | 'Network'
   | 'Monitoring'
+  | 'Reliability'
+
+export type JsonPrimitive = string | number | boolean | null
+export type JsonValue =
+  | JsonPrimitive
+  | JsonValue[]
+  | { [key: string]: JsonValue }
+
+export interface ArmTemplate {
+  [key: string]: JsonValue
+}
+export interface RuleEvaluation {
+  status: RuleStatus
+  evidence: string[]
+}
+
+export interface RuleContext {
+  template: ArmTemplate
+}
 
 export interface SecurityRule {
   id: string
@@ -14,7 +33,7 @@ export interface SecurityRule {
   recommendation: string
   weight: number
   category: SecurityCategory
-  evaluate: (source: string) => RuleStatus
+  evaluate: (context: RuleContext) => RuleEvaluation
 }
 
 export type SecurityRuleMetadata = Omit<SecurityRule, 'evaluate'>
@@ -27,6 +46,7 @@ export interface Finding {
   recommendation: string
   weight: number
   category: SecurityCategory
+  evidence: string[]
 }
 
 export interface CategoryScore {
@@ -36,9 +56,30 @@ export interface CategoryScore {
   status: RuleStatus
 }
 
+export interface CompilerDiagnostic {
+  file?: string
+  line?: number
+  column?: number
+  level: 'error' | 'warning'
+  code?: string
+  message: string
+}
+
 export interface AnalysisResult {
   score: number
   status: 'Poor' | 'Needs Improvement' | 'Good' | 'Ready for Protection'
   findings: Finding[]
   categories: CategoryScore[]
+  compilation: {
+    status: 'succeeded'
+    entrypoint: string
+    fileCount: number
+    resourceCount: number
+    diagnostics: CompilerDiagnostic[]
+  }
+}
+
+export interface BicepProject {
+  entrypoint: string
+  files: Record<string, string>
 }

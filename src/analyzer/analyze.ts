@@ -1,7 +1,9 @@
-import { securityRules } from './rules'
+import { countArmResources, securityRules } from './rules'
 import type {
   AnalysisResult,
+  ArmTemplate,
   CategoryScore,
+  CompilerDiagnostic,
   RuleStatus,
   SecurityCategory,
 } from './types'
@@ -12,6 +14,7 @@ const categoryOrder: SecurityCategory[] = [
   'Registry',
   'Network',
   'Monitoring',
+  'Reliability',
 ]
 
 const earnedWeight = (status: RuleStatus, weight: number) => {
@@ -19,7 +22,6 @@ const earnedWeight = (status: RuleStatus, weight: number) => {
   if (status === 'warning') return weight * 0.5
   return weight * 0.2
 }
-
 const overallStatus = (score: number): AnalysisResult['status'] => {
   if (score >= 85) return 'Ready for Protection'
   if (score >= 70) return 'Good'
@@ -27,13 +29,21 @@ const overallStatus = (score: number): AnalysisResult['status'] => {
   return 'Poor'
 }
 
-export const analyzeBicep = (source: string): AnalysisResult => {
+export const analyzeArmTemplate = (
+  template: ArmTemplate,
+  compilation: {
+    entrypoint: string
+    fileCount: number
+    diagnostics?: CompilerDiagnostic[]
+  },
+): AnalysisResult => {
   const findings = securityRules.map((rule) => {
-    const severity = rule.evaluate(source)
+    const evaluation = rule.evaluate({ template })
     return {
       id: rule.id,
       title: rule.title,
-      severity,
+      severity: evaluation.status,
+      evidence: evaluation.evidence,
       description: rule.description,
       recommendation: rule.recommendation,
       weight: rule.weight,
@@ -82,5 +92,12 @@ export const analyzeBicep = (source: string): AnalysisResult => {
     status: overallStatus(score),
     findings,
     categories,
+    compilation: {
+      status: 'succeeded',
+      entrypoint: compilation.entrypoint,
+      fileCount: compilation.fileCount,
+      resourceCount: countArmResources(template),
+      diagnostics: compilation.diagnostics ?? [],
+    },
   }
 }

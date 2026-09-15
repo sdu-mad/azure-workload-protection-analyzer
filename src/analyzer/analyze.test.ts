@@ -1,65 +1,157 @@
 import { describe, expect, it } from 'vitest'
-import insecureSample from '../samples/insecure-workload.bicep?raw'
-import secureSample from '../samples/secure-workload.bicep?raw'
-import { analyzeBicep } from './analyze'
-import { securityRules } from './rules'
+import { analyzeArmTemplate } from './analyze'
+import type { ArmTemplate } from './types'
 
-const evaluateRule = (id: string, source: string) => {
-  const rule = securityRules.find((candidate) => candidate.id === id)
-  if (!rule) throw new Error(`Unknown rule ${id}`)
-  return rule.evaluate(source)
+const analyze = (template: ArmTemplate) =>
+  analyzeArmTemplate(template, {
+    entrypoint: 'main.bicep',
+    fileCount: 1,
+  })
+const secureTemplate: ArmTemplate = {
+  $schema:
+    'https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#',
+  contentVersion: '1.0.0.0',
+  resources: [
+    {
+      type: 'Microsoft.ContainerRegistry/registries',
+      name: 'secureRegistry',
+      properties: {
+        adminUserEnabled: false,
+        publicNetworkAccess: 'Disabled',
+      },
+    },
+    {
+      type: 'Microsoft.KeyVault/vaults',
+      name: 'secureVault',
+      properties: {
+        enableRbacAuthorization: true,
+        publicNetworkAccess: 'Disabled',
+      },
+    },
+    {
+      type: 'Microsoft.App/managedEnvironments',
+      name: 'secureEnvironment',
+      properties: {
+        appLogsConfiguration: {
+          destination: 'log-analytics',
+        },
+      },
+    },
+    {
+      type: 'Microsoft.App/containerApps',
+      name: 'secureApp',
+      identity: {
+        type: 'UserAssigned',
+      },
+      properties: {
+        configuration: {
+          ingress: {
+            external: false,
+            allowInsecure: false,
+          },
+        },
+        template: {
+          containers: [
+            {
+              name: 'secureApp',
+              probes: [
+                { type: 'Liveness' },
+                { type: 'Readiness' },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  ],
 }
 
-describe('security rules', () => {
-  it.each([
-    ['CWP001', "identity: { type: 'SystemAssigned' }", 'pass'],
-    ['CWP001', "identity: { type: 'None' }", 'critical'],
-    ['CWP002', 'adminUserEnabled: false', 'pass'],
-    ['CWP002', 'adminUserEnabled: true', 'critical'],
-    [
-      'CWP003',
-      "resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {}",
-      'pass',
-    ],
-    [
-      'CWP003',
-      "resource app 'Microsoft.App/containerApps@2024-03-01' = {}",
-      'critical',
-    ],
-    ['CWP004', "value: 'not-sensitive'", 'pass'],
-    ['CWP004', "apiKey: 'hardcoded-value'", 'critical'],
-    ['CWP005', 'external: false', 'pass'],
-    ['CWP005', 'external: true', 'warning'],
-    [
-      'CWP006',
-      "resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {}",
-      'pass',
-    ],
-    [
-      'CWP006',
-      "resource app 'Microsoft.App/containerApps@2024-03-01' = {}",
-      'critical',
-    ],
-  ])('%s evaluates source as %s', (id, source, expected) => {
-    expect(evaluateRule(id, source)).toBe(expected)
-  })
+const insecureTemplate: ArmTemplate = {
+  $schema:
+    'https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#',
+  contentVersion: '1.0.0.0',
+  resources: [
+    {
+      type: 'Microsoft.ContainerRegistry/registries',
+      name: 'insecureRegistry',
+      properties: {
+        adminUserEnabled: true,
+        publicNetworkAccess: 'Enabled',
+      },
+    },
+    {
+      type: 'Microsoft.App/managedEnvironments',
+      name: 'insecureEnvironment',
+      properties: {},
+    },
+    {
+      type: 'Microsoft.App/containerApps',
+      name: 'insecureApp',
+      properties: {
+        configuration: {
+          ingress: {
+            external: true,
+            allowInsecure: true,
+          },
+          secrets: [
+            {
+              name: 'database-password',
+              value: 'DemoPassword123!',
+            },
+          ],
+        },
+        template: {
+          containers: [{ name: 'insecureApp' }],
+        },
+      },
+    },
+  ],
+}
 
-  it('ignores findings that appear only in comments', () => {
-    expect(evaluateRule('CWP005', '// external: true')).toBe('pass')
-    expect(evaluateRule('CWP004', "/* password: 'value' */")).toBe('pass')
-  })
-})
+describe('semantic ARM analysis', () => {
+  it('scores a hardened compiled template at 100', () => {
+    const result = analyze(secureTemplate)
 
-describe('analyzeBicep', () => {
-  it('scores the secure sample at 100', () => {
-    const result = analyzeBicep(secureSample)
     expect(result.score).toBe(100)
     expect(result.status).toBe('Ready for Protection')
+    expect(result.findings).toHaveLength(10)
+    expect(result.compilation.resourceCount).toBe(4)
+    expect(result.findings.every((finding) => finding.evidence.length > 0)).toBe(
+      true,
+    )
   })
 
-  it('scores the insecure sample at 37', () => {
-    const result = analyzeBicep(insecureSample)
-    expect(result.score).toBe(37)
+  it('reports critical and warning findings from effective properties', () => {
+    const result = analyze(insecureTemplate)
+
+    expect(result.score).toBe(23)
     expect(result.status).toBe('Poor')
+    expect(result.findings.find((finding) => finding.id === 'CWP004')).toMatchObject(
+      {
+        severity: 'critical',
+      },
+    )
+    expect(result.findings.find((finding) => finding.id === 'CWP005')).toMatchObject(
+      {
+        severity: 'warning',
+      },
+    )
+  })
+
+  it('discovers resources emitted through nested deployment templates', () => {
+    const nested = analyze({
+      resources: [
+        {
+          type: 'Microsoft.Resources/deployments',
+          name: 'module',
+          properties: {
+            template: secureTemplate,
+          },
+        },
+      ],
+    })
+
+    expect(nested.compilation.resourceCount).toBe(5)
+    expect(nested.score).toBe(100)
   })
 })

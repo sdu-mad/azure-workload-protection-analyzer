@@ -44,6 +44,10 @@ export function FindingsPanel({ findings }: FindingsPanelProps) {
                     : finding.recommendation}
                 </dd>
               </div>
+              <div>
+                <dt>Evidence</dt>
+                <dd>{finding.evidence.join('; ')}</dd>
+              </div>
             </dl>
           </article>
         ))}

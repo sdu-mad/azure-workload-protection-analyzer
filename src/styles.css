@@ -149,6 +149,36 @@ footer {
   color: var(--cp-surface);
 }
 
+.compilation-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 24px;
+  padding: 14px 16px;
+  border: 1px solid var(--cp-border);
+  border-radius: 0.625rem;
+  background: var(--cp-surface-soft);
+  color: var(--cp-text-muted);
+  font-size: 13px;
+}
+
+.compilation-summary span,
+.compilation-summary strong {
+  padding-right: 10px;
+  border-right: 1px solid var(--cp-border);
+}
+
+.compilation-summary span:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.analysis-error ul {
+  margin-bottom: 0;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+
 main {
   padding: 72px 0 40px;
 }

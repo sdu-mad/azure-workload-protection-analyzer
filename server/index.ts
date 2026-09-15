@@ -1,3 +1,4 @@
+import './telemetry'
 import { resolve } from 'node:path'
 import { createApp } from './app'
 import { createKeyVaultReadinessCheck } from './keyVault'

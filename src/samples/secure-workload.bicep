@@ -10,6 +10,7 @@ resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   }
   properties: {
     adminUserEnabled: false
+    publicNetworkAccess: 'Disabled'
   }
 }
 
@@ -20,6 +21,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     tenantId: subscription().tenantId
     enableRbacAuthorization: true
     enableSoftDelete: true
+    publicNetworkAccess: 'Disabled'
     sku: {
       family: 'A'
       name: 'standard'
@@ -60,6 +62,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     configuration: {
       ingress: {
         external: false
+        allowInsecure: false
         targetPort: 8080
       }
       registries: [
@@ -78,6 +81,22 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'KEY_VAULT_URI'
               value: keyVault.properties.vaultUri
+            }
+          ]
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/api/health'
+                port: 8080
+              }
+            }
+            {
+              type: 'Readiness'
+              httpGet: {
+                path: '/api/ready'
+                port: 8080
+              }
             }
           ]
         }

@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AnalysisResult } from './analyzer/types'
-import { analyzeWorkload, getHealth } from './api/client'
+import {
+  AnalysisApiError,
+  analyzeWorkload,
+  getHealth,
+} from './api/client'
 import { ArchitectureDiagram } from './components/ArchitectureDiagram'
 import { BicepEditor } from './components/BicepEditor'
 import { FindingsPanel } from './components/FindingsPanel'
@@ -20,22 +24,45 @@ function App() {
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysisError, setAnalysisError] = useState<string | null>(null)
+  const [compilerErrors, setCompilerErrors] = useState<string[]>([])
   const [apiStatus, setApiStatus] = useState<'checking' | 'online' | 'offline'>(
     'checking',
   )
+  const analysisRequestId = useRef(0)
 
   const runAnalysis = useCallback(async (bicepSource: string) => {
+    const requestId = ++analysisRequestId.current
     setIsAnalyzing(true)
     setAnalysisError(null)
+    setCompilerErrors([])
 
     try {
-      setResult(await analyzeWorkload(bicepSource))
+      const nextResult = await analyzeWorkload(bicepSource)
+      if (requestId === analysisRequestId.current) {
+        setResult(nextResult)
+      }
     } catch (error) {
+      if (requestId !== analysisRequestId.current) {
+        return
+      }
       setAnalysisError(
         error instanceof Error ? error.message : 'The analysis request failed.',
       )
+      if (error instanceof AnalysisApiError) {
+        setCompilerErrors(
+          error.diagnostics.map((diagnostic) => {
+            const location =
+              diagnostic.file && diagnostic.line && diagnostic.column
+                ? `${diagnostic.file}:${diagnostic.line}:${diagnostic.column} `
+                : ''
+            return `${location}${diagnostic.code ? `${diagnostic.code}: ` : ''}${diagnostic.message}`
+          }),
+        )
+      }
     } finally {
-      setIsAnalyzing(false)
+      if (requestId === analysisRequestId.current) {
+        setIsAnalyzing(false)
+      }
     }
   }, [])
 
@@ -71,9 +98,9 @@ function App() {
           <span className="eyebrow">Azure Infrastructure as Code</span>
           <h1>Cloud Workload Protection Readiness Analyzer</h1>
           <p>
-            Inspect a fictional Azure Bicep workload against identity, secrets,
-            registry, network, and monitoring controls. This portfolio project
-            is an educational readiness aid, not a production security scanner.
+            Compile and inspect Azure Bicep workloads against identity, secrets,
+            registry, network, runtime, and monitoring controls. Findings use
+            effective ARM resources and include evidence for review.
           </p>
           <div className="scope-row">
             <span>Subscription: sub-sdusi-demo</span>
@@ -109,9 +136,16 @@ function App() {
             isAnalyzing={isAnalyzing}
           />
           {analysisError && (
-            <p className="analysis-error" role="alert">
-              Analysis failed: {analysisError}
-            </p>
+            <div className="analysis-error" role="alert">
+              <strong>Analysis failed: {analysisError}</strong>
+              {compilerErrors.length > 0 && (
+                <ul>
+                  {compilerErrors.map((diagnostic) => (
+                    <li key={diagnostic}>{diagnostic}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </section>
 
@@ -133,7 +167,7 @@ function App() {
       </main>
 
       <footer>
-        <p>Cloud Workload Protection Readiness Analyzer · Full-stack portfolio demo</p>
+        <p>Cloud Workload Protection Readiness Analyzer · Semantic Bicep security analysis</p>
       </footer>
     </>
   )
