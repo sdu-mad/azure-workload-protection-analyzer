@@ -1,0 +1,44 @@
+{
+  "analyzers": {
+    "core": {
+      "enabled": true,
+      "verbose": true,
+      "rules": {
+        "adminusername-should-not-be-literal": {
+          "level": "error"
+        },
+        "artifacts-parameters": {
+          "level": "error"
+        },
+        "max-asserts": {
+          "level": "warning"
+        },
+        "no-hardcoded-env-urls": {
+          "level": "error"
+        },
+        "no-hardcoded-location": {
+          "level": "warning"
+        },
+        "no-unnecessary-dependson": {
+          "level": "warning"
+        },
+        "outputs-should-not-contain-secrets": {
+          "level": "error"
+        },
+        "secure-parameter-default": {
+          "level": "error"
+        },
+        "simplify-interpolation": {
+          "level": "warning"
+        },
+        "use-parent-property": {
+          "level": "warning"
+        },
+        "use-recent-api-versions": {
+          "level": "warning",
+          "maxAllowedAgeInDays": 730
+        }
+      }
+    }
+  }
+}

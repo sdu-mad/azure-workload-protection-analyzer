@@ -1,11 +1,13 @@
 targetScope = 'resourceGroup'
 
-param name string
+param workspaceName string
+param applicationInsightsName string
 param location string = resourceGroup().location
 param tags object = {}
+param retentionInDays int
 
-resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
-  name: name
+resource workspace 'Microsoft.OperationalInsights/workspaces@2025-07-01' = {
+  name: workspaceName
   location: location
   tags: tags
   properties: {
@@ -14,14 +16,32 @@ resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
     }
     publicNetworkAccessForIngestion: 'Enabled'
     publicNetworkAccessForQuery: 'Enabled'
-    retentionInDays: 30
+    retentionInDays: retentionInDays
     sku: {
       name: 'PerGB2018'
     }
   }
 }
 
-output id string = workspace.id
-output customerId string = workspace.properties.customerId
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: applicationInsightsName
+  location: location
+  tags: tags
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: workspace.id
+    DisableIpMasking: false
+    IngestionMode: 'LogAnalytics'
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
+  }
+}
+
+output workspaceId string = workspace.id
+output workspaceCustomerId string = workspace.properties.customerId
 @secure()
-output primarySharedKey string = workspace.listKeys().primarySharedKey
+output workspaceSharedKey string = workspace.listKeys().primarySharedKey
+output applicationInsightsId string = applicationInsights.id
+@secure()
+output applicationInsightsConnectionString string = applicationInsights.properties.ConnectionString

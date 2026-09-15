@@ -10,7 +10,7 @@ var keyVaultSecretsUserRoleId = subscriptionResourceId(
   '4633458b-17de-408a-b874-0445c86b69e6'
 )
 
-resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+resource vault 'Microsoft.KeyVault/vaults@2026-02-01' = {
   name: name
   location: location
   tags: tags
@@ -19,7 +19,11 @@ resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableRbacAuthorization: true
     enablePurgeProtection: true
     enableSoftDelete: true
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: 'Disabled'
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: 'Deny'
+    }
     sku: {
       family: 'A'
       name: 'standard'

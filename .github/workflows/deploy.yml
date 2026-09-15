@@ -1,0 +1,109 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.environment }}
+    environment: ${{ inputs.environment }}
+    runs-on: [self-hosted, azure, cwp-deployment]
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with workload identity
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Azure Developer CLI
+        uses: Azure/setup-azd@v2
+
+      - name: Authenticate Azure Developer CLI
+        shell: bash
+        run: |
+          azd auth login \
+            --client-id "${{ vars.AZURE_CLIENT_ID }}" \
+            --tenant-id "${{ vars.AZURE_TENANT_ID }}" \
+            --federated-credential-provider github
+
+      - name: Configure AZD environment
+        shell: bash
+        env:
+          ENVIRONMENT_NAME: ${{ inputs.environment }}
+          ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
+        run: |
+          azd env select "$ENVIRONMENT_NAME" || azd env new "$ENVIRONMENT_NAME"
+          azd env set AZURE_SUBSCRIPTION_ID "${{ vars.AZURE_SUBSCRIPTION_ID }}"
+          azd env set AZURE_LOCATION "${{ vars.AZURE_LOCATION }}"
+          azd env set ENTRA_CLIENT_ID "${{ vars.ENTRA_CLIENT_ID }}"
+          azd env set ENTRA_CLIENT_SECRET "$ENTRA_CLIENT_SECRET"
+          azd env set AZURE_ALERT_EMAIL "${{ vars.AZURE_ALERT_EMAIL }}"
+
+      - name: Preview infrastructure changes
+        run: azd provision --preview --no-prompt
+
+      - name: Provision infrastructure
+        run: azd provision --no-prompt
+
+      - name: Read deployment outputs
+        id: outputs
+        shell: bash
+        run: |
+          echo "registry=$(azd env get-value AZURE_CONTAINER_REGISTRY_NAME)" >> "$GITHUB_OUTPUT"
+          echo "registryEndpoint=$(azd env get-value AZURE_CONTAINER_REGISTRY_ENDPOINT)" >> "$GITHUB_OUTPUT"
+          echo "resourceGroup=$(azd env get-value AZURE_RESOURCE_GROUP)" >> "$GITHUB_OUTPUT"
+          echo "app=$(azd env get-value SERVICE_WEB_NAME)" >> "$GITHUB_OUTPUT"
+          echo "url=$(azd env get-value WEB_URL)" >> "$GITHUB_OUTPUT"
+
+      - name: Build immutable image in ACR
+        run: |
+          az acr build \
+            --registry "${{ steps.outputs.outputs.registry }}" \
+            --image "cwp-analyzer:${{ github.sha }}" \
+            .
+
+      - name: Deploy immutable image
+        run: |
+          az containerapp update \
+            --resource-group "${{ steps.outputs.outputs.resourceGroup }}" \
+            --name "${{ steps.outputs.outputs.app }}" \
+            --image "${{ steps.outputs.outputs.registryEndpoint }}/cwp-analyzer:${{ github.sha }}"
+
+      - name: Verify health and readiness
+        shell: bash
+        run: |
+          for path in api/health api/ready; do
+            curl --fail --retry 12 --retry-delay 10 \
+              "${{ steps.outputs.outputs.url }}/$path"
+          done
+
+      - name: Record deployed revision
+        shell: bash
+        run: |
+          az containerapp show \
+            --resource-group "${{ steps.outputs.outputs.resourceGroup }}" \
+            --name "${{ steps.outputs.outputs.app }}" \
+            --query "{revision:properties.latestRevisionName,image:properties.template.containers[0].image,status:properties.runningStatus}" \
+            --output json

@@ -6,8 +6,9 @@ param tags object = {}
 param workspaceCustomerId string
 @secure()
 param workspaceSharedKey string
+param infrastructureSubnetId string
 
-resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
+resource environment 'Microsoft.App/managedEnvironments@2026-01-01' = {
   name: name
   location: location
   tags: tags
@@ -18,6 +19,10 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
         customerId: workspaceCustomerId
         sharedKey: workspaceSharedKey
       }
+    }
+    vnetConfiguration: {
+      infrastructureSubnetId: infrastructureSubnetId
+      internal: false
     }
     zoneRedundant: false
   }

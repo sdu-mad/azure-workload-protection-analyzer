@@ -9,7 +9,7 @@ var acrPullRoleId = subscriptionResourceId(
   '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 )
 
-resource registry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
+resource registry 'Microsoft.ContainerRegistry/registries@2025-11-01' existing = {
   name: name
 }
 

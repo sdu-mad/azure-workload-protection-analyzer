@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   quality:
@@ -26,6 +27,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Dependency review
+        if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@v4
+
       - name: Lint
         run: npm run lint
 
@@ -37,6 +42,47 @@ jobs:
 
       - name: Build production application
         run: npm run build
+
+      - name: Install Bicep CLI
+        run: az bicep install
+
+      - name: Compile production Bicep
+        run: az bicep build --file ./infra/main.bicep --stdout > /dev/null
+
+      - name: Verify Bicep formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            az bicep format --file "$file" --stdout > "$RUNNER_TEMP/formatted.bicep"
+            diff --strip-trailing-cr "$file" "$RUNNER_TEMP/formatted.bicep"
+          done < <(find infra -name '*.bicep' -print)
+
+      - name: Build production container
+        run: docker build --tag cwp-analyzer:${{ github.sha }} .
+
+      - name: Scan container image
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: cwp-analyzer:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Upload container scan
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Generate software bill of materials
+        uses: anchore/sbom-action@v0
+        with:
+          image: cwp-analyzer:${{ github.sha }}
+          format: spdx-json
+          output-file: cwp-analyzer-sbom.spdx.json
 
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
@@ -52,3 +98,12 @@ jobs:
           path: playwright-report/
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Upload SBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cwp-analyzer-sbom
+          path: cwp-analyzer-sbom.spdx.json
+          if-no-files-found: error
+          retention-days: 90

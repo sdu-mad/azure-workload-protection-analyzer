@@ -8,11 +8,17 @@ param identityId string
 param identityClientId string
 param registryLoginServer string
 param keyVaultUri string
+@secure()
+param applicationInsightsConnectionString string
+@secure()
+param entraClientSecret string
+param minReplicas int
+param maxReplicas int
 
 @description('Bootstrap image used during provisioning. AZD replaces it with the application image during deployment.')
 param containerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
-resource app 'Microsoft.App/containerApps@2024-03-01' = {
+resource app 'Microsoft.App/containerApps@2026-01-01' = {
   name: name
   location: location
   tags: tags
@@ -38,6 +44,16 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           server: registryLoginServer
         }
       ]
+      secrets: [
+        {
+          name: 'applicationinsights-connection-string'
+          value: applicationInsightsConnectionString
+        }
+        {
+          name: 'microsoft-provider-authentication-secret'
+          value: entraClientSecret
+        }
+      ]
     }
     template: {
       containers: [
@@ -61,12 +77,16 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'AZURE_CLIENT_ID'
               value: identityClientId
             }
+            {
+              name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+              secretRef: 'applicationinsights-connection-string'
+            }
           ]
           probes: [
             {
               type: 'Startup'
               httpGet: {
-                path: '/'
+                path: '/api/health'
                 port: 8080
               }
               initialDelaySeconds: 0
@@ -76,7 +96,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             {
               type: 'Liveness'
               httpGet: {
-                path: '/'
+                path: '/api/health'
                 port: 8080
               }
               initialDelaySeconds: 10
@@ -86,7 +106,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             {
               type: 'Readiness'
               httpGet: {
-                path: '/'
+                path: '/api/ready'
                 port: 8080
               }
               initialDelaySeconds: 5
@@ -101,8 +121,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: {
-        minReplicas: 0
-        maxReplicas: 2
+        minReplicas: minReplicas
+        maxReplicas: maxReplicas
         rules: [
           {
             name: 'http-scaling'
@@ -119,4 +139,5 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
 }
 
 output name string = app.name
+output id string = app.id
 output url string = 'https://${app.properties.configuration.ingress.fqdn}'

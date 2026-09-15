@@ -2,6 +2,29 @@ name: sdusi-analyzer
 metadata:
   template: azd-init
 
+hooks:
+  preprovision:
+    windows:
+      shell: pwsh
+      run: |
+        if ([string]::IsNullOrWhiteSpace($env:ENTRA_CLIENT_ID)) {
+          throw "ENTRA_CLIENT_ID must be set to the pre-created Entra application client ID."
+        }
+        if ([string]::IsNullOrWhiteSpace($env:ENTRA_CLIENT_SECRET)) {
+          throw "ENTRA_CLIENT_SECRET must be set to the pre-created Entra application client secret."
+        }
+    posix:
+      shell: sh
+      run: |
+        test -n "$ENTRA_CLIENT_ID" || {
+          echo "ENTRA_CLIENT_ID must be set to the pre-created Entra application client ID." >&2
+          exit 1
+        }
+        test -n "$ENTRA_CLIENT_SECRET" || {
+          echo "ENTRA_CLIENT_SECRET must be set to the pre-created Entra application client secret." >&2
+          exit 1
+        }
+
 infra:
   provider: bicep
   path: ./infra
