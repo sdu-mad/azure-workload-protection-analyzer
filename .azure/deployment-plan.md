@@ -1,12 +1,12 @@
-# Production Readiness Implementation Plan
+# Dev Deployment Implementation Record
 
-> **Status:** Validated
+> **Status:** Deployed
 
-Updated: 2026-09-15
+Updated: 2026-09-16
 
 ## 1. Objective
 
-Upgrade the deployed Cloud Workload Protection Readiness Analyzer from an educational regex-based portfolio application to a production implementation for **dev** and **prod** environments.
+Upgrade the Cloud Workload Protection Readiness Analyzer from an educational regex-based portfolio application to a production-oriented implementation and deploy the **dev** environment end to end. Production deployment is intentionally out of scope for this delivery.
 
 The completed system will:
 
@@ -26,7 +26,7 @@ The completed system will:
 |---|---|
 | Workspace mode | Modify existing deployed application |
 | Deployment recipe | Azure Developer CLI with modular Bicep |
-| Environments | `dev`, `prod` |
+| Environment | `dev` deployed; `prod` not executed |
 | Runtime | Node.js 22 container on Azure Container Apps |
 | Analyzer implementation | Official Bicep CLI compilation plus semantic ARM-template rule evaluation |
 | Authentication | Container Apps built-in Microsoft Entra authentication |
@@ -265,7 +265,7 @@ Provisioning or replacing the current Container Apps environment network configu
 
 ## 12. Validation Proof
 
-Validated on 2026-09-15 against **Visual Studio Enterprise Subscription** (`279a73de-ecee-43ab-83a2-ccab2c1c1711`) in `eastus`.
+Validated on 2026-09-15 and deployed on 2026-09-16 against **Visual Studio Enterprise Subscription** (`279a73de-ecee-43ab-83a2-ccab2c1c1711`) in `eastus`.
 
 | Check | Result |
 |---|---|
@@ -284,14 +284,36 @@ Validated on 2026-09-15 against **Visual Studio Enterprise Subscription** (`279a
 | Azure Policy assignment review | Pass; only the default Defender for Cloud assignment is present |
 | Static RBAC review | Pass; resource-scoped `AcrPull` and `Key Vault Secrets User` |
 
-The preview used validation-only Entra placeholders because the tenant-owned dev/prod registrations are a deployment prerequisite, not repository configuration. Real `ENTRA_CLIENT_ID` and `ENTRA_CLIENT_SECRET` values must be stored in the corresponding GitHub Environment before deployment.
+The dev Entra registration and GitHub OIDC deployment identity are configured outside the repository. The client secret is stored only in the local AZD environment and GitHub `dev` Environment secret.
 
-## 13. Execution Checklist
+## 13. Dev Deployment Proof
+
+| Item | Deployed value / result |
+|---|---|
+| Resource group | `rg-cwp-dev-h4vapl` |
+| Region | `eastus` |
+| Container App | `cwp-dev-h4vapl-app` |
+| Application URL | `https://cwp-dev-h4vapl-app.thankfulsand-0457a63e.eastus.azurecontainerapps.io` |
+| Revision | `cwp-dev-h4vapl-app--0000001`; healthy, running, one replica |
+| Immutable image | `crdevh4vaplwbckofw.azurecr.io/cwp-analyzer:af33fa1d66c483ec6797d040ca6814d27c95879f` |
+| Image digest | `sha256:0c667f055d2641ff7c99e664457deadf81aaa2ebe6a30d5e95ff063080eae4ab` |
+| Private build | ACR Tasks run `ca2` on VNet-connected agent pool `devbuild`; succeeded |
+| Health | `/api/health` returned HTTP 200 and `status: ok` anonymously |
+| Readiness | `/api/ready` returned HTTP 200 and `status: ready`; Key Vault `available` |
+| Authentication | Anonymous application and protected API requests redirect to the configured Microsoft Entra tenant |
+| Entra callback | `/.auth/login/aad/callback` configured on `cwp-analyzer-dev`; ID-token issuance enabled |
+| ACR RBAC | Container App user-assigned identity has `AcrPull` at registry scope |
+| Key Vault RBAC | Container App user-assigned identity has `Key Vault Secrets User` at vault scope |
+| Network posture | ACR and Key Vault public access disabled; private endpoints and private DNS deployed |
+| Monitoring | Application Insights, action group, restart/server-error alerts, and availability web test deployed |
+| Azure portal | `https://portal.azure.com/#@/resource/subscriptions/279a73de-ecee-43ab-83a2-ccab2c1c1711/resourceGroups/rg-cwp-dev-h4vapl/overview` |
+
+## 14. Execution Checklist
 
 ### Phase 1 - Plan
 
 - [x] Confirm full production target.
-- [x] Confirm dev and prod environments.
+- [x] Confirm dev implementation and deployment scope.
 - [x] Analyze current application and deployed infrastructure.
 - [x] Research official Bicep compiler, Container Apps auth, networking, probes, and monitoring patterns.
 - [x] Confirm Azure subscription, region, tenant app-registration approach, and cost acceptance.
@@ -304,7 +326,7 @@ The preview used validation-only Entra placeholders because the tenant-owned dev
 - [x] Add analyzer security controls and tests.
 - [x] Update API and UI.
 - [x] Harden the runtime image.
-- [x] Add dev/prod Bicep architecture.
+- [x] Add environment-aware Bicep architecture and deploy dev.
 - [x] Add Entra auth configuration.
 - [x] Add private networking.
 - [x] Add Application Insights and alerts.
@@ -332,9 +354,15 @@ The preview used validation-only Entra placeholders because the tenant-owned dev
 
 ### Phase 4 - Deploy
 
-- [ ] Obtain explicit deployment approval.
-- [ ] Deploy dev.
-- [ ] Verify authenticated functionality and monitoring.
-- [ ] Promote immutable image to prod.
-- [ ] Verify prod and rollback readiness.
-- [ ] Set status to `Deployed`.
+- [x] Obtain explicit deployment approval.
+- [x] Deploy dev infrastructure.
+- [x] Build the immutable image through the private ACR agent pool.
+- [x] Deploy and verify the healthy dev Container App revision.
+- [x] Configure Entra callback and logout URLs.
+- [x] Verify anonymous health/readiness and protected-route login redirects.
+- [x] Verify live ACR and Key Vault RBAC.
+- [x] Verify alerts and the availability web test.
+- [x] Set status to `Deployed`.
+- [ ] Complete one interactive Entra user sign-in; this requires the user to authenticate in a browser.
+
+Production promotion and production verification are intentionally excluded from the current scope.
