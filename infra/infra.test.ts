@@ -31,6 +31,10 @@ describe('production Bicep architecture', () => {
     const network = read('modules/network.bicep')
     const registry = read('modules/container-registry.bicep')
     expect(network).toContain("name: 'acr-build-agents'")
+    expect(network).toContain(
+      "resource buildAgentsNatGateway 'Microsoft.Network/natGateways@2025-01-01'",
+    )
+    expect(network).toContain('id: buildAgentsNatGateway.id')
     expect(registry).toContain(
       "'Microsoft.ContainerRegistry/registries/agentPools@2025-03-01-preview'",
     )

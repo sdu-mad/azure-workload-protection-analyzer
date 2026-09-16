@@ -21,6 +21,34 @@ resource vnet 'Microsoft.Network/virtualNetworks@2025-07-01' = {
   }
 }
 
+resource buildAgentsPublicIp 'Microsoft.Network/publicIPAddresses@2025-01-01' = {
+  name: '${name}-build-agents-pip'
+  location: location
+  tags: tags
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+}
+
+resource buildAgentsNatGateway 'Microsoft.Network/natGateways@2025-01-01' = {
+  name: '${name}-build-agents-nat'
+  location: location
+  tags: tags
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    publicIpAddresses: [
+      {
+        id: buildAgentsPublicIp.id
+      }
+    ]
+  }
+}
+
 resource containerAppsSubnet 'Microsoft.Network/virtualNetworks/subnets@2025-07-01' = {
   parent: vnet
   name: 'container-apps'
@@ -51,6 +79,9 @@ resource buildAgentsSubnet 'Microsoft.Network/virtualNetworks/subnets@2025-07-01
   name: 'acr-build-agents'
   properties: {
     addressPrefix: buildAgentsSubnetPrefix
+    natGateway: {
+      id: buildAgentsNatGateway.id
+    }
   }
 }
 
