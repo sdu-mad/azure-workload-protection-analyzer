@@ -17,6 +17,7 @@ ARG BICEP_VERSION=v0.47.16
 ARG BICEP_SHA256=64c345a58e0c3e48b1bc98a4e62d6b3adb1d238281297de3400aeafb2697aa5a
 
 RUN apt-get update \
+  && apt-get upgrade --yes \
   && apt-get install --yes --no-install-recommends ca-certificates curl libicu72 \
   && curl --fail --location --silent --show-error \
     "https://github.com/Azure/bicep/releases/download/${BICEP_VERSION}/bicep-linux-x64" \
@@ -27,7 +28,9 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+RUN npm ci --omit=dev --ignore-scripts \
+  && npm cache clean --force \
+  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/dist-server ./dist-server
 
