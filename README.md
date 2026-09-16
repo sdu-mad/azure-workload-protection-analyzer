@@ -222,6 +222,8 @@ Provisioning and deployment are intentionally separate. The GitHub `Deploy` work
 
 ## Documentation
 
+- [Repository file guide (Markdown)](docs/Repository-File-Guide.md)
+- [Repository file guide (Word)](docs/Repository-File-Guide.docx)
 - [Production implementation plan](.azure/deployment-plan.md)
 - [Operations runbook](docs/operations-runbook.md)
 - [Threat model](docs/threat-model.md)
