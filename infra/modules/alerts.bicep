@@ -1,6 +1,7 @@
 targetScope = 'resourceGroup'
 
 param namePrefix string
+param location string = resourceGroup().location
 param tags object = {}
 param containerAppId string
 param applicationInsightsId string
@@ -48,7 +49,7 @@ resource serverErrors 'Microsoft.Insights/metricAlerts@2026-01-01' = {
           metricName: 'requests/failed'
           operator: 'GreaterThan'
           threshold: 5
-          timeAggregation: 'Total'
+          timeAggregation: 'Count'
           criterionType: 'StaticThresholdCriterion'
         }
       ]
@@ -100,7 +101,7 @@ resource restarts 'Microsoft.Insights/metricAlerts@2026-01-01' = {
 
 resource availabilityTest 'Microsoft.Insights/webtests@2022-06-15' = {
   name: '${namePrefix}-availability'
-  location: 'global'
+  location: location
   tags: union(tags, {
     'hidden-link:${applicationInsightsId}': 'Resource'
   })

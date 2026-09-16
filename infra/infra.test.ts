@@ -52,4 +52,11 @@ describe('production Bicep architecture', () => {
       "resource applicationInsights 'Microsoft.Insights/components@2020-02-02'",
     )
   })
+
+  it('uses Azure-supported alert aggregation and regional web tests', () => {
+    const alerts = read('modules/alerts.bicep')
+    expect(alerts).toContain("metricName: 'requests/failed'")
+    expect(alerts).toContain("timeAggregation: 'Count'")
+    expect(alerts).toContain('location: location')
+  })
 })

@@ -196,6 +196,7 @@ module alerts './modules/alerts.bicep' = {
   scope: resourceGroup
   params: {
     namePrefix: namePrefix
+    location: location
     tags: tags
     containerAppId: web.outputs.id
     applicationInsightsId: monitoring.outputs.applicationInsightsId
