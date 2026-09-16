@@ -38,6 +38,7 @@ var applicationInsightsName = take('appi-${namePrefix}', 255)
 var addressSpace = isProduction ? '10.30.0.0/16' : '10.20.0.0/16'
 var containerAppsSubnetPrefix = isProduction ? '10.30.0.0/23' : '10.20.0.0/23'
 var privateEndpointsSubnetPrefix = isProduction ? '10.30.2.0/27' : '10.20.2.0/27'
+var buildAgentsSubnetPrefix = isProduction ? '10.30.3.0/27' : '10.20.3.0/27'
 
 var tags = {
   'azd-env-name': environmentName
@@ -63,6 +64,7 @@ module network './modules/network.bicep' = {
     addressSpace: addressSpace
     containerAppsSubnetPrefix: containerAppsSubnetPrefix
     privateEndpointsSubnetPrefix: privateEndpointsSubnetPrefix
+    buildAgentsSubnetPrefix: buildAgentsSubnetPrefix
   }
 }
 
@@ -92,6 +94,8 @@ module registry './modules/container-registry.bicep' = {
     name: registryName
     location: location
     tags: tags
+    agentPoolName: '${environmentName}build'
+    agentPoolSubnetId: network.outputs.buildAgentsSubnetId
   }
 }
 
@@ -208,6 +212,7 @@ module alerts './modules/alerts.bicep' = {
 output AZURE_RESOURCE_GROUP string = resourceGroup.name
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
 output AZURE_CONTAINER_REGISTRY_NAME string = registry.outputs.name
+output AZURE_CONTAINER_REGISTRY_AGENT_POOL string = registry.outputs.agentPoolName
 output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
 output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = monitoring.outputs.workspaceId
 output AZURE_APPLICATION_INSIGHTS_NAME string = applicationInsightsName

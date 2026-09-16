@@ -6,6 +6,7 @@ param tags object = {}
 param addressSpace string = '10.20.0.0/16'
 param containerAppsSubnetPrefix string = '10.20.0.0/23'
 param privateEndpointsSubnetPrefix string = '10.20.2.0/27'
+param buildAgentsSubnetPrefix string = '10.20.3.0/27'
 
 resource vnet 'Microsoft.Network/virtualNetworks@2025-07-01' = {
   name: name
@@ -45,7 +46,16 @@ resource privateEndpointsSubnet 'Microsoft.Network/virtualNetworks/subnets@2025-
   }
 }
 
+resource buildAgentsSubnet 'Microsoft.Network/virtualNetworks/subnets@2025-07-01' = {
+  parent: vnet
+  name: 'acr-build-agents'
+  properties: {
+    addressPrefix: buildAgentsSubnetPrefix
+  }
+}
+
 output id string = vnet.id
 output name string = vnet.name
 output containerAppsSubnetId string = containerAppsSubnet.id
 output privateEndpointsSubnetId string = privateEndpointsSubnet.id
+output buildAgentsSubnetId string = buildAgentsSubnet.id

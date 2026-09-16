@@ -27,6 +27,18 @@ describe('production Bicep architecture', () => {
     expect(endpoints).toContain("'vault'")
   })
 
+  it('builds private images through a VNet-connected ACR agent pool', () => {
+    const network = read('modules/network.bicep')
+    const registry = read('modules/container-registry.bicep')
+    expect(network).toContain("name: 'acr-build-agents'")
+    expect(registry).toContain(
+      "'Microsoft.ContainerRegistry/registries/agentPools@2025-03-01-preview'",
+    )
+    expect(registry).toContain(
+      'virtualNetworkSubnetResourceId: agentPoolSubnetId',
+    )
+  })
+
   it('uses health and readiness APIs for platform probes', () => {
     const app = read('modules/container-app.bicep')
     expect(app).toContain("path: '/api/health'")

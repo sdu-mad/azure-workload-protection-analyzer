@@ -23,7 +23,7 @@ jobs:
   deploy:
     name: Deploy ${{ inputs.environment }}
     environment: ${{ inputs.environment }}
-    runs-on: [self-hosted, azure, cwp-deployment]
+    runs-on: ubuntu-latest
     timeout-minutes: 45
 
     steps:
@@ -72,6 +72,7 @@ jobs:
         shell: bash
         run: |
           echo "registry=$(azd env get-value AZURE_CONTAINER_REGISTRY_NAME)" >> "$GITHUB_OUTPUT"
+          echo "agentPool=$(azd env get-value AZURE_CONTAINER_REGISTRY_AGENT_POOL)" >> "$GITHUB_OUTPUT"
           echo "registryEndpoint=$(azd env get-value AZURE_CONTAINER_REGISTRY_ENDPOINT)" >> "$GITHUB_OUTPUT"
           echo "resourceGroup=$(azd env get-value AZURE_RESOURCE_GROUP)" >> "$GITHUB_OUTPUT"
           echo "app=$(azd env get-value SERVICE_WEB_NAME)" >> "$GITHUB_OUTPUT"
@@ -81,6 +82,7 @@ jobs:
         run: |
           az acr build \
             --registry "${{ steps.outputs.outputs.registry }}" \
+            --agent-pool "${{ steps.outputs.outputs.agentPool }}" \
             --image "cwp-analyzer:${{ github.sha }}" \
             .
 
