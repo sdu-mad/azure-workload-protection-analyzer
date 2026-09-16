@@ -271,7 +271,7 @@ Validated on 2026-09-15 and deployed on 2026-09-16 against **Visual Studio Enter
 |---|---|
 | `npm run lint` | Pass |
 | `npm run typecheck` | Pass |
-| `npm test` | Pass, 17 tests |
+| `npm test` | Pass, 19 tests |
 | `npm run build` | Pass |
 | `npm run test:e2e` | Pass, 4 Chromium tests |
 | `az bicep build --file .\infra\main.bicep --stdout` | Pass |
@@ -294,10 +294,10 @@ The dev Entra registration and GitHub OIDC deployment identity are configured ou
 | Region | `eastus` |
 | Container App | `cwp-dev-h4vapl-app` |
 | Application URL | `https://cwp-dev-h4vapl-app.thankfulsand-0457a63e.eastus.azurecontainerapps.io` |
-| Revision | `cwp-dev-h4vapl-app--0000001`; healthy, running, one replica |
-| Immutable image | `crdevh4vaplwbckofw.azurecr.io/cwp-analyzer:af33fa1d66c483ec6797d040ca6814d27c95879f` |
-| Image digest | `sha256:0c667f055d2641ff7c99e664457deadf81aaa2ebe6a30d5e95ff063080eae4ab` |
-| Private build | ACR Tasks run `ca2` on VNet-connected agent pool `devbuild`; succeeded |
+| Revision | `cwp-dev-h4vapl-app--0000002`; healthy, running, one replica |
+| Immutable image | `crdevh4vaplwbckofw.azurecr.io/cwp-analyzer:2f24e4d3e14943adba14d0c0df20cfc46abd5a57` |
+| Image digest | `sha256:c5ba95493892a5568c4d242c88579ddb127b43504f58e072e22395adb3c8b8e1` |
+| Private build | ACR Tasks run `ca3` on VNet-connected agent pool `devbuild`; succeeded |
 | Health | `/api/health` returned HTTP 200 and `status: ok` anonymously |
 | Readiness | `/api/ready` returned HTTP 200 and `status: ready`; Key Vault `available` |
 | Authentication | Anonymous application and protected API requests redirect to the configured Microsoft Entra tenant |
@@ -305,7 +305,8 @@ The dev Entra registration and GitHub OIDC deployment identity are configured ou
 | ACR RBAC | Container App user-assigned identity has `AcrPull` at registry scope |
 | Key Vault RBAC | Container App user-assigned identity has `Key Vault Secrets User` at vault scope |
 | Network posture | ACR and Key Vault public access disabled; private endpoints and private DNS deployed |
-| Monitoring | Application Insights, action group, restart/server-error alerts, and availability web test deployed |
+| Monitoring | Application Insights ingestion confirmed; action group, restart/server-error alerts, and availability web test deployed |
+| CI | GitHub Actions run `35138171684` passed all quality and supply-chain gates |
 | Azure portal | `https://portal.azure.com/#@/resource/subscriptions/279a73de-ecee-43ab-83a2-ccab2c1c1711/resourceGroups/rg-cwp-dev-h4vapl/overview` |
 
 ## 14. Execution Checklist
