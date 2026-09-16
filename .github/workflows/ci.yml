@@ -54,9 +54,9 @@ jobs:
         run: |
           set -euo pipefail
           while IFS= read -r file; do
-            az bicep format --file "$file" --stdout > "$RUNNER_TEMP/formatted.bicep"
-            diff --strip-trailing-cr "$file" "$RUNNER_TEMP/formatted.bicep"
+            az bicep format --file "$file"
           done < <(find infra -name '*.bicep' -print)
+          git diff --exit-code -- infra
 
       - name: Build production container
         run: docker build --tag cwp-analyzer:${{ github.sha }} .
@@ -72,8 +72,8 @@ jobs:
           exit-code: '1'
 
       - name: Upload container scan
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
 
@@ -100,7 +100,7 @@ jobs:
           retention-days: 14
 
       - name: Upload SBOM
-        if: always()
+        if: always() && hashFiles('cwp-analyzer-sbom.spdx.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: cwp-analyzer-sbom
